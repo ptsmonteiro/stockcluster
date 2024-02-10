@@ -1,5 +1,5 @@
 function parseValueBourseDirect(value) {
-    return parseFloat(value.replace(' ','').replace(',', ".").match(/\d+.\d+/))
+    return parseFloat(value.replace(/[^ -~]+/g, "").replace(',', ".").match(/\d+.\d+/))
 }
 
 function observeBourseDirect() {
@@ -139,8 +139,6 @@ function scrapeDegiro() {
     }
 }
 
-
-
 function observeDegiro() {
     const config = { attributes: true, childList: true, subtree: true };
 
@@ -157,20 +155,90 @@ function observeDegiro() {
     observer.observe(document, config);
 }
 
+function scrapeAssuranceVie(tbody) {
+    account = document.querySelector('option[selected]').textContent.match(/\D+/)[0].trim()
 
+    positions = []
+
+    rows = tbody.querySelectorAll('tr.results-row')
+    for (row of rows) {
+        var isin = row.querySelector('td.col-1').textContent.trim()
+        if (isin.length === 0) {
+            // Isin%253DSUR000001760
+            var product_popup = row.querySelector('td.col-3 a').href
+            isin = product_popup.match(/Isin\%\w{4}(\w{12})/)[1]
+        }
+
+        const name = row.querySelector('td.col-3 a').textContent.trim()
+
+        const qty_text = row.querySelector('td.col-4').textContent.trim()
+        var qty
+        if (qty_text.length > 0) {
+            qty = parseFloat(row.querySelector('td.col-4').textContent.replace(',','.'))
+        } else {
+            qty = 1
+        }
+
+        var lastPriceDate
+        date_parts = row.querySelector('td.col-5').textContent.split('/')
+        if (date_parts.length === 3) {
+            lastPriceDate = new Date(date_parts[2], date_parts[1]-1, date_parts[0])
+        } else {
+            lastPriceDate = new Date()
+        }
+        
+        const lastPriceText = row.querySelector('td.col-6').textContent.trim()
+        const breakEvenPriceText = row.querySelector('td.col-7').textContent.trim()
+        const totalText = row.querySelector('td.col-9').textContent.trim()
+
+        var lastPrice, breakEvenPrice
+        if (lastPriceText.length < 1) {
+            lastPrice = parseValueBourseDirect(totalText)
+            breakEvenPrice = parseValueBourseDirect(totalText)
+        } else {
+            lastPrice = parseValueBourseDirect(lastPriceText)
+            breakEvenPrice = parseValueBourseDirect(breakEvenPriceText)    
+        }
+
+        positions.push({
+            'broker': account,
+            'isin': isin,
+            'ticker': '',
+            'name': name,
+            'qty': qty,
+            'currency': 'EUR',
+            'lastPrice': lastPrice,
+            'lastPriceDate': lastPriceDate,
+            'breakEvenPrice': breakEvenPrice,
+        })
+    }
+    console.log(positions)
+}
 
 function setup() {
     console.log("setup")
+
+    // Degiro
     if (window.location.href == "https://trader.degiro.nl/trader/#/portfolio/assets") {
             console.log("Observing Degiro")
             observeDegiro()
     }
 
+    // Bourse Direct
     if (window.location.href == urlBourseDirect) {
         console.log("Observing BourseDirect")
         observeBourseDirect()
     }   
- 
+
+    // AssuranceVie
+    if (window.location.href.includes('action=detailContrat')) {
+        const x = document.querySelector('tbody.table-data td.col-9')
+        if (x) {
+            console.log("Scraping AssuranceVie")
+            scrapeAssuranceVie(x.closest('tbody'))
+        }
+    }
+
 }
 
   // Listen for messages from the background script
